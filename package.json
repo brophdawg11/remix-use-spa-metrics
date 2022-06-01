@@ -1,0 +1,49 @@
+{
+  "name": "remix-use-spa-metrics",
+  "version": "0.1.0",
+  "description": "Custom hook for tracking client-side navigation performance in Remix/React-Router applications",
+  "author": "matt@brophy.org",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "dist/remix-use-spa-metrics.umd.js",
+  "module": "dist/remix-use-spa-metrics.es.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/remix-use-spa-metrics.es.js",
+      "require": "./dist/remix-use-spa-metrics.umd.js"
+    }
+  },
+  "keywords": [
+    "remix",
+    "react-router",
+    "performance",
+    "spa",
+    "navigation",
+    "routing",
+    "metrics"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brophdawg11/remix-use-spa-metrics.git"
+  },
+  "homepage": "https://github.com/brophdawg11/remix-use-spa-metrics#readme",
+  "bugs": {
+    "url": "https://github.com/brophdawg11/remix-use-spa-metrics/issues"
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -b",
+    "dev": "vite dev"
+  },
+  "peerDependencies": {
+    "react": ">=16.8"
+  },
+  "devDependencies": {
+    "@types/react": "18.0.10",
+    "typescript": "4.7.2",
+    "vite": "2.9.9"
+  }
+}
