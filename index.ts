@@ -18,11 +18,15 @@ export enum RemixPerfMeasure {
   LoadingNavigation = "💿:loading-navigation",
 }
 
+interface Predicate {
+  (m: PerformanceMark): boolean;
+}
+
 let navId = 0;
 
 function findRight(
   arr: PerformanceMark[],
-  predicate: (m: PerformanceMark) => boolean
+  predicate: Predicate
 ): PerformanceMark | undefined {
   for (let i = arr.length - 1; i >= 0; i--) {
     if (predicate(arr[i])) {
@@ -31,9 +35,15 @@ function findRight(
   }
 }
 
-function getLastMark(): PerformanceMark | undefined {
-  let marks = window.performance.getEntriesByType("mark") as PerformanceMark[];
-  return findRight(marks, (m) => m.detail.id === navId);
+function getLastNavEntry(
+  type: "mark" | "measure",
+  predicate?: Predicate
+): PerformanceMark | undefined {
+  let marks = window.performance.getEntriesByType(type) as PerformanceMark[];
+  return findRight(
+    marks,
+    (m) => m.detail?.id === navId && (!predicate || predicate(m))
+  );
 }
 
 function wasSubmissionNavigation() {
@@ -46,87 +56,167 @@ function wasSubmissionNavigation() {
   );
 }
 
-interface Navigation {
-  state: "idle" | "submitting" | "loading";
+function mark(name: string, detail?: Record<string, unknown>) {
+  // console.debug(navId, "performance.mark()", name, detail);
+  return window.performance.mark(name, {
+    detail: {
+      ...detail,
+      id: navId,
+    },
+  });
 }
 
-export function useSpaMetrics(navigation: Navigation) {
+function measure(name: string, start: string, end: string) {
+  // console.debug(navId, "performance.measure()", name, start, end);
+  return window.performance.measure(name, {
+    start,
+    end,
+    detail: {
+      id: navId,
+    },
+  });
+}
+
+function completeNavigation(
+  type: "submitting" | "loading",
+  callback: CallbackFunction
+) {
+  let startMark = getLastNavEntry("mark", (m) => m.detail.fromLocation != null);
+
+  let submissionMeasure =
+    type === "submitting"
+      ? getLastNavEntry(
+          "measure",
+          (m) => m.name === RemixPerfMeasure.Submitting
+        )
+      : null;
+
+  let loadingMeasure = getLastNavEntry(
+    "measure",
+    (m) => m.name === RemixPerfMeasure.Loading
+  );
+
+  let navMeasure = getLastNavEntry(
+    "measure",
+    (m) =>
+      m.name ===
+      (type === "submitting"
+        ? RemixPerfMeasure.SubmissionNavigation
+        : RemixPerfMeasure.LoadingNavigation)
+  );
+
+  if (!startMark || !navMeasure || !loadingMeasure) {
+    console.error(
+      "Could not find proper nav marks/measures, skipping SPA metrics"
+    );
+    return;
+  }
+
+  callback({
+    type,
+    fromLocation: startMark.detail.fromLocation,
+    toLocation: startMark.detail.toLocation,
+    finalLocation: location,
+    submissionDuration: submissionMeasure?.duration,
+    loadingDuration: loadingMeasure.duration,
+    totalDuration: navMeasure.duration,
+  });
+}
+
+interface Navigation {
+  state: "idle" | "submitting" | "loading";
+  location: {
+    pathname: string;
+    search: string;
+  };
+}
+
+export interface CallbackData {
+  type: "submitting" | "loading";
+  fromLocation: Location;
+  toLocation: Location;
+  finalLocation: Location;
+  submissionDuration?: number;
+  loadingDuration: number;
+  totalDuration: number;
+}
+
+export interface CallbackFunction {
+  (data: CallbackData): void;
+}
+
+export function useSpaMetrics(
+  location: Location,
+  navigation: Navigation,
+  callback: CallbackFunction
+) {
   React.useEffect(() => {
     if (navigation.state === "idle") {
-      if (!getLastMark()) {
+      if (!getLastNavEntry("mark")) {
         return;
       }
 
       if (wasSubmissionNavigation()) {
         // Complete submission navigation
-        window.performance.mark(RemixPerfMark.LoadingEnd, {
-          detail: { id: navId },
-        });
-        window.performance.mark(RemixPerfMark.SubmissionNavigationEnd, {
-          detail: { id: navId },
-        });
-        window.performance.measure(
+        mark(RemixPerfMark.LoadingEnd);
+        mark(RemixPerfMark.SubmissionNavigationEnd);
+        measure(
           RemixPerfMeasure.SubmissionNavigation,
           RemixPerfMark.SubmissionNavigationStart,
           RemixPerfMark.SubmissionNavigationEnd
         );
-        window.performance.measure(
+        measure(
           RemixPerfMeasure.Loading,
           RemixPerfMark.LoadingStart,
           RemixPerfMark.LoadingEnd
         );
+        completeNavigation("submitting", callback);
       } else {
         // Complete normal navigation
-        window.performance.mark(RemixPerfMark.LoadingEnd, {
-          detail: { id: navId },
-        });
-        window.performance.mark(RemixPerfMark.LoadingNavigationEnd, {
-          detail: { id: navId },
-        });
-        window.performance.measure(
+        mark(RemixPerfMark.LoadingEnd);
+        mark(RemixPerfMark.LoadingNavigationEnd);
+        measure(
           RemixPerfMeasure.LoadingNavigation,
           RemixPerfMark.LoadingNavigationStart,
           RemixPerfMark.LoadingNavigationEnd
         );
-        window.performance.measure(
+        measure(
           RemixPerfMeasure.Loading,
           RemixPerfMark.LoadingStart,
           RemixPerfMark.LoadingEnd
         );
+        completeNavigation("loading", callback);
       }
+
+      // Prep next navigation
+      navId++;
     } else if (navigation.state === "submitting") {
       // Start submission navigation
-      navId++;
-      window.performance.mark(RemixPerfMark.SubmissionNavigationStart, {
-        detail: { id: navId },
+      mark(RemixPerfMark.SubmissionNavigationStart, {
+        fromLocation: location,
+        toLocation: navigation.location,
       });
-      window.performance.mark(RemixPerfMark.SubmittingStart, {
+      mark(RemixPerfMark.SubmittingStart, {
         detail: { id: navId },
       });
     } else if (navigation.state === "loading") {
-      if (!getLastMark()) {
+      if (!getLastNavEntry("mark")) {
         // Start normal navigation if no marks exist for the current navId
-        navId++;
-        window.performance.mark(RemixPerfMark.LoadingNavigationStart, {
-          detail: { id: navId },
+        mark(RemixPerfMark.LoadingNavigationStart, {
+          fromLocation: location,
+          toLocation: navigation.location,
         });
-        window.performance.mark(RemixPerfMark.LoadingStart, {
-          detail: { id: navId },
-        });
+        mark(RemixPerfMark.LoadingStart);
       } else {
         // Finish submitting state and start loading state for the current
         // submission navigation
-        window.performance.mark(RemixPerfMark.SubmittingEnd, {
-          detail: { id: navId },
-        });
-        window.performance.measure(
+        mark(RemixPerfMark.SubmittingEnd);
+        measure(
           RemixPerfMeasure.Submitting,
           RemixPerfMark.SubmittingStart,
           RemixPerfMark.SubmittingEnd
         );
-        window.performance.mark(RemixPerfMark.LoadingStart, {
-          detail: { id: navId },
-        });
+        mark(RemixPerfMark.LoadingStart);
       }
     }
   }, [navigation.state]);
