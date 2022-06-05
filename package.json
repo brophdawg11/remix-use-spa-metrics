@@ -1,6 +1,6 @@
 {
   "name": "remix-use-spa-metrics",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Custom hook for tracking client-side navigation performance in Remix/React-Router applications",
   "author": "matt@brophy.org",
   "license": "MIT",
